@@ -164,7 +164,7 @@ jobs:
     name: "🚀 Deploy — Produção"
     runs-on: ubuntu-latest
     needs: integration-check
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && secrets.SSH_HOST != ''
+    if: false
 
     environment:
       name: production
