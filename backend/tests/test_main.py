@@ -3,6 +3,8 @@ Testes de integração — Express Purchase Tracker API
 Cobertura mínima exigida pelo CI/CD: 80%
 """
 
+from __future__ import annotations
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -14,7 +16,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Patch do StaticFiles antes de importar main
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 with patch("fastapi.staticfiles.StaticFiles.__init__", return_value=None):
     with patch("fastapi.applications.FastAPI.mount"):
@@ -27,6 +29,7 @@ client = TestClient(app)
 # FIXTURES
 # ──────────────────────────────────────────────
 
+
 @pytest.fixture(autouse=True)
 def banco_em_memoria(tmp_path, monkeypatch):
     """
@@ -36,6 +39,7 @@ def banco_em_memoria(tmp_path, monkeypatch):
     db_path = str(tmp_path / "test_compras.db")
 
     import sqlite3 as _sqlite3
+
     original_connect = _sqlite3.connect
 
     def mock_connect(database, *args, **kwargs):
@@ -49,6 +53,7 @@ def banco_em_memoria(tmp_path, monkeypatch):
 # ──────────────────────────────────────────────
 # TESTES — GET /pedidos
 # ──────────────────────────────────────────────
+
 
 class TestListarPedidos:
     def test_retorna_lista(self):
@@ -64,13 +69,23 @@ class TestListarPedidos:
     def test_estrutura_do_pedido(self):
         response = client.get("/pedidos")
         pedido = response.json()[0]
-        campos_obrigatorios = {"id", "item", "quantidade", "urgencia", "preco_estimado", "setor", "comprado", "data_criacao"}
+        campos_obrigatorios = {
+            "id",
+            "item",
+            "quantidade",
+            "urgencia",
+            "preco_estimado",
+            "setor",
+            "comprado",
+            "data_criacao",
+        }
         assert campos_obrigatorios.issubset(pedido.keys())
 
 
 # ──────────────────────────────────────────────
 # TESTES — POST /pedidos
 # ──────────────────────────────────────────────
+
 
 class TestCriarPedido:
     def _payload_valido(self, **overrides):
@@ -122,15 +137,19 @@ class TestCriarPedido:
 # TESTES — PUT /pedidos/{id}/concluir
 # ──────────────────────────────────────────────
 
+
 class TestConcluirPedido:
     def _criar_pedido(self):
-        response = client.post("/pedidos", json={
-            "item": "Webcam HD",
-            "quantidade": 1,
-            "urgencia": "Baixa",
-            "preco_estimado": 300.0,
-            "setor": "RH",
-        })
+        response = client.post(
+            "/pedidos",
+            json={
+                "item": "Webcam HD",
+                "quantidade": 1,
+                "urgencia": "Baixa",
+                "preco_estimado": 300.0,
+                "setor": "RH",
+            },
+        )
         return response.json()["id"]
 
     def test_concluir_pedido_existente(self):
@@ -152,15 +171,19 @@ class TestConcluirPedido:
 # TESTES — DELETE /pedidos/{id}
 # ──────────────────────────────────────────────
 
+
 class TestDeletarPedido:
     def _criar_pedido(self):
-        response = client.post("/pedidos", json={
-            "item": "Hub USB",
-            "quantidade": 1,
-            "urgencia": "Normal",
-            "preco_estimado": 150.0,
-            "setor": "TI",
-        })
+        response = client.post(
+            "/pedidos",
+            json={
+                "item": "Hub USB",
+                "quantidade": 1,
+                "urgencia": "Normal",
+                "preco_estimado": 150.0,
+                "setor": "TI",
+            },
+        )
         return response.json()["id"]
 
     def test_deletar_pedido_existente(self):
