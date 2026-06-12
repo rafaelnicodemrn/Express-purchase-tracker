@@ -1,0 +1,224 @@
+name: CI/CD — Express Purchase Tracker
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# Cancela runs anteriores em aberto para o mesmo branch/PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ──────────────────────────────────────────────
+# VARIÁVEIS GLOBAIS
+# ──────────────────────────────────────────────
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
+# ══════════════════════════════════════════════
+# JOB 1 — LINT BACKEND
+# ══════════════════════════════════════════════
+jobs:
+  lint-backend:
+    name: "🔍 Lint — Backend Python"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Instalar dependências de lint
+        run: pip install ruff
+
+      - name: Executar Ruff (lint + formato)
+        run: |
+          ruff check backend/
+          ruff format --check backend/
+
+  # ══════════════════════════════════════════════
+  # JOB 2 — TESTES BACKEND
+  # ══════════════════════════════════════════════
+  test-backend:
+    name: "🧪 Testes — Backend FastAPI"
+    runs-on: ubuntu-latest
+    needs: lint-backend
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Instalar dependências do backend
+        run: pip install -r backend/requirements.txt
+
+      - name: Executar testes com cobertura
+        working-directory: backend
+        run: |
+          pytest tests/ \
+            --cov=main \
+            --cov-report=term-missing \
+            --cov-fail-under=80 \
+            -v
+
+      - name: Publicar relatório de cobertura
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: backend/.coverage
+          retention-days: 7
+
+  # ══════════════════════════════════════════════
+  # JOB 3 — BUILD FRONTEND
+  # ══════════════════════════════════════════════
+  build-frontend:
+    name: "🏗️ Build — Frontend Svelte"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependências do frontend
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build de produção
+        working-directory: frontend
+        run: npm run build
+
+      - name: Publicar artefato de build
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 1
+
+  # ══════════════════════════════════════════════
+  # JOB 4 — INTEGRAÇÃO: BACKEND + FRONTEND DIST
+  # ══════════════════════════════════════════════
+  integration-check:
+    name: "🔗 Integração — FastAPI serve frontend"
+    runs-on: ubuntu-latest
+    needs: [test-backend, build-frontend]
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Instalar dependências do backend
+        run: pip install -r backend/requirements.txt
+
+      - name: Baixar artefato do frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+
+      - name: Iniciar servidor e verificar saúde da API
+        working-directory: backend
+        run: |
+          uvicorn main:app --host 0.0.0.0 --port 8000 &
+          sleep 4
+          curl --fail http://localhost:8000/pedidos \
+            -H "Accept: application/json" \
+            | python3 -c "import sys, json; data=json.load(sys.stdin); assert isinstance(data, list), 'Resposta não é lista'"
+          echo "✅ API respondendo corretamente."
+
+  # ══════════════════════════════════════════════
+  # JOB 5 — DEPLOY (somente push em main)
+  # ══════════════════════════════════════════════
+  deploy:
+    name: "🚀 Deploy — Produção"
+    runs-on: ubuntu-latest
+    needs: integration-check
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    environment:
+      name: production
+      url: ${{ vars.DEPLOY_URL }}
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Baixar artefato do frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+
+      # ── Opção A: Deploy via SSH para VPS/servidor próprio ──
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -e
+            echo "📦 Atualizando código..."
+            cd /opt/express-purchase-tracker
+            git pull origin main
+
+            echo "🐍 Atualizando dependências Python..."
+            pip install -r backend/requirements.txt --quiet
+
+            echo "🔄 Reiniciando serviço..."
+            systemctl restart express-purchase-tracker
+
+            echo "✅ Deploy concluído com sucesso."
+
+      # ── Opção B (alternativa): Copiar dist via SCP ──
+      # Descomente e adapte se preferir enviar o build diretamente
+      #
+      # - name: Copiar build do frontend para servidor
+      #   uses: appleboy/scp-action@v0.1.7
+      #   with:
+      #     host: ${{ secrets.SSH_HOST }}
+      #     username: ${{ secrets.SSH_USER }}
+      #     key: ${{ secrets.SSH_PRIVATE_KEY }}
+      #     source: "frontend/dist/*"
+      #     target: "/opt/express-purchase-tracker/frontend/dist/"
+      #     strip_components: 2
+
+      - name: Notificar resultado do deploy
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          echo "Deploy finalizado com status: $STATUS"
+          # Integrar com webhook do Teams/Slack se necessário:
+          # curl -X POST "${{ secrets.WEBHOOK_URL }}" \
+          #   -H "Content-Type: application/json" \
+          #   -d "{\"text\": \"Deploy Express Purchase Tracker: $STATUS\"}"
