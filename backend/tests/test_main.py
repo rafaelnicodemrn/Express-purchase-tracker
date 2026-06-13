@@ -132,6 +132,186 @@ class TestCriarPedido:
         response = client.post("/pedidos", json=payload)
         assert response.status_code == 200
 
+    def test_urgencia_invalida_e_rejeitada(self):
+        response = client.post(
+            "/pedidos", json=self._payload_valido(urgencia="Urgentissimo")
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.parametrize("urgencia", ["Alta", "Normal", "Baixa"])
+    def test_urgencias_validas_sao_aceitas(self, urgencia):
+        response = client.post("/pedidos", json=self._payload_valido(urgencia=urgencia))
+        assert response.status_code == 200
+        assert response.json()["urgencia"] == urgencia
+
+
+# ──────────────────────────────────────────────
+# TESTES — GET /pedidos (filtros)
+# ──────────────────────────────────────────────
+
+
+class TestFiltrosListagem:
+    def test_filtro_por_setor(self):
+        response = client.get("/pedidos", params={"setor": "TI"})
+        assert response.status_code == 200
+        dados = response.json()
+        assert len(dados) >= 1
+        assert all(p["setor"] == "TI" for p in dados)
+
+    def test_filtro_por_urgencia(self):
+        response = client.get("/pedidos", params={"urgencia": "Alta"})
+        assert response.status_code == 200
+        dados = response.json()
+        assert len(dados) >= 1
+        assert all(p["urgencia"] == "Alta" for p in dados)
+
+    def test_filtro_por_comprado(self):
+        response = client.get("/pedidos", params={"comprado": "true"})
+        assert response.status_code == 200
+        dados = response.json()
+        assert len(dados) >= 1
+        assert all(p["comprado"] is True for p in dados)
+
+    def test_filtro_combinado_sem_resultado(self):
+        response = client.get(
+            "/pedidos", params={"setor": "Inexistente", "urgencia": "Alta"}
+        )
+        assert response.status_code == 200
+        assert response.json() == []
+
+
+# ──────────────────────────────────────────────
+# TESTES — GET /pedidos/resumo
+# ──────────────────────────────────────────────
+
+
+class TestResumoPedidos:
+    def test_estrutura_da_resposta(self):
+        response = client.get("/pedidos/resumo")
+        assert response.status_code == 200
+        dados = response.json()
+        assert set(dados.keys()) == {
+            "total_pedidos",
+            "valor_total_pendente",
+            "por_urgencia",
+            "por_setor",
+        }
+
+    def test_totais_consistentes_com_listagem(self):
+        pedidos = client.get("/pedidos").json()
+        resumo = client.get("/pedidos/resumo").json()
+
+        assert resumo["total_pedidos"] == len(pedidos)
+
+        valor_esperado = sum(
+            p["preco_estimado"] * p["quantidade"] for p in pedidos if not p["comprado"]
+        )
+        assert resumo["valor_total_pendente"] == pytest.approx(valor_esperado)
+
+        por_urgencia_esperado = {}
+        for p in pedidos:
+            por_urgencia_esperado[p["urgencia"]] = (
+                por_urgencia_esperado.get(p["urgencia"], 0) + 1
+            )
+        assert resumo["por_urgencia"] == por_urgencia_esperado
+
+        por_setor_esperado = {}
+        for p in pedidos:
+            por_setor_esperado[p["setor"]] = por_setor_esperado.get(p["setor"], 0) + 1
+        assert resumo["por_setor"] == por_setor_esperado
+
+    def test_resumo_atualiza_apos_criar_pedido(self):
+        resumo_antes = client.get("/pedidos/resumo").json()
+        client.post(
+            "/pedidos",
+            json={
+                "item": "Cabo HDMI",
+                "quantidade": 10,
+                "urgencia": "Baixa",
+                "preco_estimado": 20.0,
+                "setor": "TI",
+            },
+        )
+        resumo_depois = client.get("/pedidos/resumo").json()
+        assert resumo_depois["total_pedidos"] == resumo_antes["total_pedidos"] + 1
+        assert resumo_depois["valor_total_pendente"] == pytest.approx(
+            resumo_antes["valor_total_pendente"] + 200.0
+        )
+
+
+# ──────────────────────────────────────────────
+# TESTES — PUT /pedidos/{id}
+# ──────────────────────────────────────────────
+
+
+class TestAtualizarPedido:
+    def _criar_pedido(self):
+        response = client.post(
+            "/pedidos",
+            json={
+                "item": "Impressora Laser",
+                "quantidade": 1,
+                "urgencia": "Normal",
+                "preco_estimado": 800.0,
+                "setor": "TI",
+            },
+        )
+        return response.json()["id"]
+
+    def test_atualizar_pedido_existente(self):
+        pedido_id = self._criar_pedido()
+        response = client.put(
+            f"/pedidos/{pedido_id}",
+            json={
+                "item": "Impressora Laser Colorida",
+                "quantidade": 2,
+                "urgencia": "Alta",
+                "preco_estimado": 1500.0,
+                "setor": "Design",
+                "comprado": True,
+            },
+        )
+        assert response.status_code == 200
+        dados = response.json()
+        assert dados["item"] == "Impressora Laser Colorida"
+        assert dados["quantidade"] == 2
+        assert dados["urgencia"] == "Alta"
+        assert dados["preco_estimado"] == 1500.0
+        assert dados["setor"] == "Design"
+        assert dados["comprado"] is True
+
+    def test_atualizacao_persiste_na_listagem(self):
+        pedido_id = self._criar_pedido()
+        client.put(
+            f"/pedidos/{pedido_id}",
+            json={
+                "item": "Impressora Atualizada",
+                "quantidade": 3,
+                "urgencia": "Baixa",
+                "preco_estimado": 999.0,
+                "setor": "RH",
+                "comprado": False,
+            },
+        )
+        pedidos = client.get("/pedidos").json()
+        pedido = next((p for p in pedidos if p["id"] == pedido_id), None)
+        assert pedido is not None
+        assert pedido["item"] == "Impressora Atualizada"
+        assert pedido["setor"] == "RH"
+
+    def test_atualizar_pedido_inexistente_retorna_404(self):
+        response = client.put(
+            "/pedidos/999999",
+            json={
+                "item": "Item Fantasma",
+                "quantidade": 1,
+                "urgencia": "Normal",
+                "preco_estimado": 10.0,
+                "setor": "TI",
+            },
+        )
+        assert response.status_code == 404
+
 
 # ──────────────────────────────────────────────
 # TESTES — PUT /pedidos/{id}/concluir
