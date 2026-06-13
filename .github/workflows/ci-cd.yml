@@ -161,66 +161,21 @@ jobs:
   # JOB 5 — DEPLOY (somente push em main)
   # ══════════════════════════════════════════════
   deploy:
-    name: "🚀 Deploy — Produção"
+    name: "🚀 Deploy — Render.com"
     runs-on: ubuntu-latest
     needs: integration-check
-    if: false
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     environment:
       name: production
-      url: ${{ vars.DEPLOY_URL }}
+      url: ${{ secrets.DEPLOY_URL }}
 
     steps:
-      - name: Checkout do repositório
-        uses: actions/checkout@v4
-
-      - name: Baixar artefato do frontend
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend/dist/
-
-      # ── Opção A: Deploy via SSH para VPS/servidor próprio ──
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          script: |
-            set -e
-            echo "📦 Atualizando código..."
-            cd /opt/express-purchase-tracker
-            git pull origin main
-
-            echo "🐍 Atualizando dependências Python..."
-            pip install -r backend/requirements.txt --quiet
-
-            echo "🔄 Reiniciando serviço..."
-            systemctl restart express-purchase-tracker
-
-            echo "✅ Deploy concluído com sucesso."
-
-      # ── Opção B (alternativa): Copiar dist via SCP ──
-      # Descomente e adapte se preferir enviar o build diretamente
-      #
-      # - name: Copiar build do frontend para servidor
-      #   uses: appleboy/scp-action@v0.1.7
-      #   with:
-      #     host: ${{ secrets.SSH_HOST }}
-      #     username: ${{ secrets.SSH_USER }}
-      #     key: ${{ secrets.SSH_PRIVATE_KEY }}
-      #     source: "frontend/dist/*"
-      #     target: "/opt/express-purchase-tracker/frontend/dist/"
-      #     strip_components: 2
-
-      - name: Notificar resultado do deploy
-        if: always()
+      - name: Trigger deploy no Render
         run: |
-          STATUS="${{ job.status }}"
-          echo "Deploy finalizado com status: $STATUS"
-          # Integrar com webhook do Teams/Slack se necessário:
-          # curl -X POST "${{ secrets.WEBHOOK_URL }}" \
-          #   -H "Content-Type: application/json" \
-          #   -d "{\"text\": \"Deploy Express Purchase Tracker: $STATUS\"}"
+          curl --fail -X POST \
+            "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache": false}'
+          echo "✅ Deploy disparado no Render.com"
