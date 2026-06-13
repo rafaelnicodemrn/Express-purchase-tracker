@@ -29,7 +29,7 @@
 
   async function carregarPedidos() {
     try {
-      const res = await fetch('http://localhost:8000/pedidos');
+      const res = await fetch('/pedidos');
       listaPedidos = await res.json();
     } catch (error) {
       console.error("Erro ao carregar dados:", error);
@@ -40,7 +40,7 @@
     if (!item) return;
     enviando = true;
     try {
-      const res = await fetch('http://localhost:8000/pedidos', {
+      const res = await fetch('/pedidos', {
         method: 'POST',
         body: JSON.stringify({ item, quantidade, urgencia, preco_estimado: parseFloat(preco_estimado) || 0, setor, comprado: false }),
         headers: { 'Content-Type': 'application/json' }
@@ -55,12 +55,12 @@
   }
 
   async function marcarComprado(id) {
-    await fetch(`http://localhost:8000/pedidos/${id}/concluir`, { method: 'PUT' });
+    await fetch(`/pedidos/${id}/concluir`, { method: 'PUT' });
     carregarPedidos();
   }
 
   async function deletar(id) {
-    await fetch(`http://localhost:8000/pedidos/${id}`, { method: 'DELETE' });
+    await fetch(`/pedidos/${id}`, { method: 'DELETE' });
     carregarPedidos();
   }
 
