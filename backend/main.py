@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 import asyncio
 import logging
@@ -242,4 +243,9 @@ def deletar_pedido(pedido_id: int):
     return {"status": "sucesso"}
 
 
-app.mount("/", StaticFiles(directory="../frontend/dist", html=True), name="frontend")
+if os.path.isdir("../frontend/dist"):
+    app.mount(
+        "/", StaticFiles(directory="../frontend/dist", html=True), name="frontend"
+    )
+else:
+    logger.warning("frontend/dist não encontrado — rodando em modo API-only")
