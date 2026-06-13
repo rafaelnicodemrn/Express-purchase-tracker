@@ -3,12 +3,12 @@ from __future__ import annotations
 import sqlite3
 import asyncio
 import logging
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Literal, Optional
 
 # Configuracao de logging corporativo
 logging.basicConfig(
@@ -27,11 +27,18 @@ class Pedido(BaseModel):
     id: Optional[int] = None
     item: str
     quantidade: int = Field(..., gt=0)
-    urgencia: str
+    urgencia: Literal["Alta", "Normal", "Baixa"]
     preco_estimado: float
     setor: str
     comprado: bool = False
     data_criacao: Optional[str] = None
+
+
+class ResumoPedidos(BaseModel):
+    total_pedidos: int
+    valor_total_pendente: float
+    por_urgencia: Dict[str, int]
+    por_setor: Dict[str, int]
 
 
 def iniciar_db():
@@ -120,13 +127,103 @@ async def criar_pedido(pedido: Pedido, background_tasks: BackgroundTasks):
 
 
 @app.get("/pedidos", response_model=List[Pedido])
-def listar_pedidos():
+def listar_pedidos(
+    setor: Optional[str] = None,
+    urgencia: Optional[str] = None,
+    comprado: Optional[bool] = None,
+) -> List[dict]:
+    """Lista pedidos, com filtros opcionais por setor, urgência e status de compra."""
+    query = "SELECT * FROM pedidos WHERE 1=1"
+    params: list = []
+
+    if setor is not None:
+        query += " AND setor = ?"
+        params.append(setor)
+    if urgencia is not None:
+        query += " AND urgencia = ?"
+        params.append(urgencia)
+    if comprado is not None:
+        query += " AND comprado = ?"
+        params.append(1 if comprado else 0)
+
+    query += " ORDER BY comprado ASC, id DESC"
+
     with sqlite3.connect("compras.db") as conn:
         conn.row_factory = sqlite3.Row
-        pedidos = conn.execute(
-            "SELECT * FROM pedidos ORDER BY comprado ASC, id DESC"
-        ).fetchall()
+        pedidos = conn.execute(query, params).fetchall()
         return [dict(p) for p in pedidos]
+
+
+@app.get("/pedidos/resumo", response_model=ResumoPedidos)
+def resumo_pedidos() -> ResumoPedidos:
+    """Retorna totais e contagens agregadas dos pedidos cadastrados."""
+    with sqlite3.connect("compras.db") as conn:
+        conn.row_factory = sqlite3.Row
+
+        total_pedidos = conn.execute(
+            "SELECT COUNT(*) AS total FROM pedidos"
+        ).fetchone()["total"]
+
+        valor_total_pendente = conn.execute(
+            "SELECT COALESCE(SUM(preco_estimado * quantidade), 0) AS total "
+            "FROM pedidos WHERE comprado = 0"
+        ).fetchone()["total"]
+
+        por_urgencia = {
+            row["urgencia"]: row["total"]
+            for row in conn.execute(
+                "SELECT urgencia, COUNT(*) AS total FROM pedidos GROUP BY urgencia"
+            ).fetchall()
+        }
+
+        por_setor = {
+            row["setor"]: row["total"]
+            for row in conn.execute(
+                "SELECT setor, COUNT(*) AS total FROM pedidos GROUP BY setor"
+            ).fetchall()
+        }
+
+    return ResumoPedidos(
+        total_pedidos=total_pedidos,
+        valor_total_pendente=valor_total_pendente,
+        por_urgencia=por_urgencia,
+        por_setor=por_setor,
+    )
+
+
+@app.put("/pedidos/{pedido_id}", response_model=Pedido)
+def atualizar_pedido(pedido_id: int, pedido: Pedido) -> dict:
+    """Atualiza os dados de um pedido existente."""
+    with sqlite3.connect("compras.db") as conn:
+        conn.row_factory = sqlite3.Row
+
+        existente = conn.execute(
+            "SELECT * FROM pedidos WHERE id = ?", (pedido_id,)
+        ).fetchone()
+        if existente is None:
+            raise HTTPException(status_code=404, detail="Pedido não encontrado")
+
+        conn.execute(
+            """UPDATE pedidos
+               SET item = ?, quantidade = ?, urgencia = ?, preco_estimado = ?, setor = ?, comprado = ?
+               WHERE id = ?""",
+            (
+                pedido.item,
+                pedido.quantidade,
+                pedido.urgencia,
+                pedido.preco_estimado,
+                pedido.setor,
+                pedido.comprado,
+                pedido_id,
+            ),
+        )
+        conn.commit()
+
+        atualizado = conn.execute(
+            "SELECT * FROM pedidos WHERE id = ?", (pedido_id,)
+        ).fetchone()
+
+    return dict(atualizado)
 
 
 @app.put("/pedidos/{pedido_id}/concluir")
