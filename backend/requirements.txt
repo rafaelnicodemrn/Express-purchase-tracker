@@ -7,11 +7,11 @@ uvicorn[standard]==0.35.0
 pydantic==2.11.7
 
 # Autenticação JWT
-python-jose[cryptography]==3.3.0
+python-jose[cryptography]==3.4.0
 passlib[bcrypt]==1.7.4
 
 # Testes e qualidade de código
-pytest==8.4.0
+pytest==9.0.3
 pytest-cov==6.1.0
 httpx==0.28.1
 ruff==0.11.13
