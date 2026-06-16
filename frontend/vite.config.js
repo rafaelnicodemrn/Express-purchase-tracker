@@ -7,6 +7,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/pedidos': 'http://localhost:8000',
+      '/auth': 'http://localhost:8000',
     },
   },
 })

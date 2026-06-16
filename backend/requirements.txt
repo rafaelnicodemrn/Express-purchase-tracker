@@ -6,6 +6,10 @@ fastapi==0.115.14
 uvicorn[standard]==0.35.0
 pydantic==2.11.7
 
+# Autenticação JWT
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
 # Testes e qualidade de código
 pytest==8.4.0
 pytest-cov==6.1.0

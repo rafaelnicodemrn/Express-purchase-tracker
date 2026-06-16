@@ -4,24 +4,49 @@ import os
 import sqlite3
 import asyncio
 import logging
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from datetime import datetime, timedelta
+
+from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 from pydantic import BaseModel, Field
-from datetime import datetime
 from typing import Dict, List, Literal, Optional
 
-# Configuracao de logging corporativo
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+# ── Configuração JWT ──────────────────────────────────────────────────────────
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_HOURS = 8
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "projeto2025")
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 app = FastAPI(title="API Gestao de Suprimentos")
 
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
+
+
+# ── Modelos ───────────────────────────────────────────────────────────────────
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
 
 
 class Pedido(BaseModel):
@@ -42,6 +67,27 @@ class ResumoPedidos(BaseModel):
     por_setor: Dict[str, int]
 
 
+# ── Auth helpers ──────────────────────────────────────────────────────────────
+
+def _criar_token(username: str) -> str:
+    expire = datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+    return jwt.encode({"sub": username, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
+    """Valida o Bearer token e retorna o username. Levanta 401 em caso de falha."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str | None = payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401, detail="Token inválido")
+        return username
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token inválido ou expirado")
+
+
+# ── Banco de dados ────────────────────────────────────────────────────────────
+
 def iniciar_db():
     with sqlite3.connect("compras.db") as conn:
         conn.execute("""
@@ -61,24 +107,8 @@ def iniciar_db():
             dados_iniciais = [
                 ("Notebook Dell Latitude", 2, "Alta", 5500.0, "TI", 0, "2023-10-24"),
                 ("Cadeira Ergonomica", 5, "Normal", 1200.0, "RH", 0, "2023-10-24"),
-                (
-                    "Monitor 24 polegadas",
-                    3,
-                    "Baixa",
-                    900.0,
-                    "Marketing",
-                    1,
-                    "2023-10-23",
-                ),
-                (
-                    "Licenca Software Adobe",
-                    1,
-                    "Alta",
-                    3500.0,
-                    "Design",
-                    0,
-                    "2023-10-25",
-                ),
+                ("Monitor 24 polegadas", 3, "Baixa", 900.0, "Marketing", 1, "2023-10-23"),
+                ("Licenca Software Adobe", 1, "Alta", 3500.0, "Design", 0, "2023-10-25"),
             ]
             conn.executemany(
                 "INSERT INTO pedidos (item, quantidade, urgencia, preco_estimado, setor, comprado, data_criacao) VALUES (?,?,?,?,?,?,?)",
@@ -90,14 +120,34 @@ def iniciar_db():
 iniciar_db()
 
 
+# ── Background tasks ──────────────────────────────────────────────────────────
+
 async def processar_notificacao_diretoria(item: str, valor: float):
     logger.info(f"Processando notificacao de aprovacao para o item: {item}")
     await asyncio.sleep(5)
     logger.info(f"Notificacao de aprovacao enviada. Valor total: R$ {valor:.2f}")
 
 
+# ── Endpoints de autenticação ─────────────────────────────────────────────────
+
+@app.post("/auth/login", response_model=TokenResponse)
+def login(credenciais: LoginRequest):
+    """Autentica o usuário e retorna um JWT com expiração de 8 horas."""
+    if credenciais.username != ADMIN_USERNAME or credenciais.password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Credenciais inválidas")
+    token = _criar_token(credenciais.username)
+    logger.info(f"Login bem-sucedido para usuário: {credenciais.username}")
+    return TokenResponse(access_token=token, token_type="bearer")
+
+
+# ── Endpoints de pedidos (protegidos) ─────────────────────────────────────────
+
 @app.post("/pedidos", response_model=Pedido)
-async def criar_pedido(pedido: Pedido, background_tasks: BackgroundTasks):
+async def criar_pedido(
+    pedido: Pedido,
+    background_tasks: BackgroundTasks,
+    _: str = Depends(get_current_user),
+):
     pedido.data_criacao = datetime.now().strftime("%Y-%m-%d")
 
     with sqlite3.connect("compras.db") as conn:
@@ -132,6 +182,7 @@ def listar_pedidos(
     setor: Optional[str] = None,
     urgencia: Optional[str] = None,
     comprado: Optional[bool] = None,
+    _: str = Depends(get_current_user),
 ) -> List[dict]:
     """Lista pedidos, com filtros opcionais por setor, urgência e status de compra."""
     query = "SELECT * FROM pedidos WHERE 1=1"
@@ -156,7 +207,7 @@ def listar_pedidos(
 
 
 @app.get("/pedidos/resumo", response_model=ResumoPedidos)
-def resumo_pedidos() -> ResumoPedidos:
+def resumo_pedidos(_: str = Depends(get_current_user)) -> ResumoPedidos:
     """Retorna totais e contagens agregadas dos pedidos cadastrados."""
     with sqlite3.connect("compras.db") as conn:
         conn.row_factory = sqlite3.Row
@@ -193,7 +244,11 @@ def resumo_pedidos() -> ResumoPedidos:
 
 
 @app.put("/pedidos/{pedido_id}", response_model=Pedido)
-def atualizar_pedido(pedido_id: int, pedido: Pedido) -> dict:
+def atualizar_pedido(
+    pedido_id: int,
+    pedido: Pedido,
+    _: str = Depends(get_current_user),
+) -> dict:
     """Atualiza os dados de um pedido existente."""
     with sqlite3.connect("compras.db") as conn:
         conn.row_factory = sqlite3.Row
@@ -228,7 +283,7 @@ def atualizar_pedido(pedido_id: int, pedido: Pedido) -> dict:
 
 
 @app.put("/pedidos/{pedido_id}/concluir")
-def concluir_pedido(pedido_id: int):
+def concluir_pedido(pedido_id: int, _: str = Depends(get_current_user)):
     with sqlite3.connect("compras.db") as conn:
         conn.execute("UPDATE pedidos SET comprado = 1 WHERE id = ?", (pedido_id,))
         conn.commit()
@@ -236,7 +291,7 @@ def concluir_pedido(pedido_id: int):
 
 
 @app.delete("/pedidos/{pedido_id}")
-def deletar_pedido(pedido_id: int):
+def deletar_pedido(pedido_id: int, _: str = Depends(get_current_user)):
     with sqlite3.connect("compras.db") as conn:
         conn.execute("DELETE FROM pedidos WHERE id = ?", (pedido_id,))
         conn.commit()
