@@ -149,13 +149,21 @@ jobs:
 
       - name: Iniciar servidor e verificar saúde da API
         working-directory: backend
+        env:
+          ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME || 'admin' }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD || 'lar2024' }}
         run: |
           uvicorn main:app --host 0.0.0.0 --port 8000 &
           sleep 4
+          TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
+            -H "Content-Type: application/json" \
+            -d "{\"username\": \"$ADMIN_USERNAME\", \"password\": \"$ADMIN_PASSWORD\"}" \
+            | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
           curl --fail http://localhost:8000/pedidos \
             -H "Accept: application/json" \
+            -H "Authorization: Bearer $TOKEN" \
             | python3 -c "import sys, json; data=json.load(sys.stdin); assert isinstance(data, list), 'Resposta não é lista'"
-          echo "✅ API respondendo corretamente."
+          echo "✅ API respondendo corretamente com autenticação."
 
   # ══════════════════════════════════════════════
   # JOB 5 — DEPLOY (somente push em main)
