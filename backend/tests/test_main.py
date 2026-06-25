@@ -50,7 +50,9 @@ def banco_em_memoria(tmp_path, monkeypatch):
 @pytest.fixture
 def auth_headers():
     """Retorna headers com token JWT válido para uso nos testes."""
-    res = client.post("/auth/login", json={"username": "admin", "password": "projeto2025"})
+    res = client.post(
+        "/auth/login", json={"username": "admin", "password": "projeto2025"}
+    )
     assert res.status_code == 200
     token = res.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
@@ -63,7 +65,9 @@ def auth_headers():
 
 class TestAutenticacao:
     def test_login_credenciais_corretas_retorna_token(self):
-        res = client.post("/auth/login", json={"username": "admin", "password": "projeto2025"})
+        res = client.post(
+            "/auth/login", json={"username": "admin", "password": "projeto2025"}
+        )
         assert res.status_code == 200
         dados = res.json()
         assert "access_token" in dados
@@ -71,11 +75,15 @@ class TestAutenticacao:
         assert len(dados["access_token"]) > 10
 
     def test_login_senha_errada_retorna_401(self):
-        res = client.post("/auth/login", json={"username": "admin", "password": "senha_errada"})
+        res = client.post(
+            "/auth/login", json={"username": "admin", "password": "senha_errada"}
+        )
         assert res.status_code == 401
 
     def test_login_usuario_errado_retorna_401(self):
-        res = client.post("/auth/login", json={"username": "hacker", "password": "projeto2025"})
+        res = client.post(
+            "/auth/login", json={"username": "hacker", "password": "projeto2025"}
+        )
         assert res.status_code == 401
 
     def test_acesso_sem_token_retorna_401(self):
@@ -83,7 +91,9 @@ class TestAutenticacao:
         assert res.status_code == 401
 
     def test_acesso_com_token_invalido_retorna_401(self):
-        res = client.get("/pedidos", headers={"Authorization": "Bearer token.invalido.mesmo"})
+        res = client.get(
+            "/pedidos", headers={"Authorization": "Bearer token.invalido.mesmo"}
+        )
         assert res.status_code == 401
 
     def test_acesso_com_token_valido_retorna_200(self, auth_headers):
@@ -91,10 +101,16 @@ class TestAutenticacao:
         assert res.status_code == 200
 
     def test_post_sem_token_retorna_401(self):
-        res = client.post("/pedidos", json={
-            "item": "Teste", "quantidade": 1, "urgencia": "Normal",
-            "preco_estimado": 100.0, "setor": "TI"
-        })
+        res = client.post(
+            "/pedidos",
+            json={
+                "item": "Teste",
+                "quantidade": 1,
+                "urgencia": "Normal",
+                "preco_estimado": 100.0,
+                "setor": "TI",
+            },
+        )
         assert res.status_code == 401
 
     def test_put_sem_token_retorna_401(self):
@@ -134,8 +150,14 @@ class TestListarPedidos:
         response = client.get("/pedidos", headers=auth_headers)
         pedido = response.json()[0]
         campos_obrigatorios = {
-            "id", "item", "quantidade", "urgencia",
-            "preco_estimado", "setor", "comprado", "data_criacao",
+            "id",
+            "item",
+            "quantidade",
+            "urgencia",
+            "preco_estimado",
+            "setor",
+            "comprado",
+            "data_criacao",
         }
         assert campos_obrigatorios.issubset(pedido.keys())
 
@@ -158,7 +180,9 @@ class TestCriarPedido:
         return base
 
     def test_cria_pedido_com_sucesso(self, auth_headers):
-        response = client.post("/pedidos", json=self._payload_valido(), headers=auth_headers)
+        response = client.post(
+            "/pedidos", json=self._payload_valido(), headers=auth_headers
+        )
         assert response.status_code == 200
         dados = response.json()
         assert dados["item"] == "Teclado Mecânico"
@@ -167,17 +191,25 @@ class TestCriarPedido:
         assert dados["data_criacao"] is not None
 
     def test_pedido_aparece_na_listagem_apos_criacao(self, auth_headers):
-        client.post("/pedidos", json=self._payload_valido(item="Mouse Logitech"), headers=auth_headers)
+        client.post(
+            "/pedidos",
+            json=self._payload_valido(item="Mouse Logitech"),
+            headers=auth_headers,
+        )
         response = client.get("/pedidos", headers=auth_headers)
         itens = [p["item"] for p in response.json()]
         assert "Mouse Logitech" in itens
 
     def test_quantidade_zero_e_invalida(self, auth_headers):
-        response = client.post("/pedidos", json=self._payload_valido(quantidade=0), headers=auth_headers)
+        response = client.post(
+            "/pedidos", json=self._payload_valido(quantidade=0), headers=auth_headers
+        )
         assert response.status_code == 422
 
     def test_quantidade_negativa_e_invalida(self, auth_headers):
-        response = client.post("/pedidos", json=self._payload_valido(quantidade=-5), headers=auth_headers)
+        response = client.post(
+            "/pedidos", json=self._payload_valido(quantidade=-5), headers=auth_headers
+        )
         assert response.status_code == 422
 
     def test_campos_obrigatorios_ausentes(self, auth_headers):
@@ -192,13 +224,19 @@ class TestCriarPedido:
 
     def test_urgencia_invalida_e_rejeitada(self, auth_headers):
         response = client.post(
-            "/pedidos", json=self._payload_valido(urgencia="Urgentissimo"), headers=auth_headers
+            "/pedidos",
+            json=self._payload_valido(urgencia="Urgentissimo"),
+            headers=auth_headers,
         )
         assert response.status_code == 422
 
     @pytest.mark.parametrize("urgencia", ["Alta", "Normal", "Baixa"])
     def test_urgencias_validas_sao_aceitas(self, urgencia, auth_headers):
-        response = client.post("/pedidos", json=self._payload_valido(urgencia=urgencia), headers=auth_headers)
+        response = client.post(
+            "/pedidos",
+            json=self._payload_valido(urgencia=urgencia),
+            headers=auth_headers,
+        )
         assert response.status_code == 200
         assert response.json()["urgencia"] == urgencia
 
@@ -217,14 +255,18 @@ class TestFiltrosListagem:
         assert all(p["setor"] == "TI" for p in dados)
 
     def test_filtro_por_urgencia(self, auth_headers):
-        response = client.get("/pedidos", params={"urgencia": "Alta"}, headers=auth_headers)
+        response = client.get(
+            "/pedidos", params={"urgencia": "Alta"}, headers=auth_headers
+        )
         assert response.status_code == 200
         dados = response.json()
         assert len(dados) >= 1
         assert all(p["urgencia"] == "Alta" for p in dados)
 
     def test_filtro_por_comprado(self, auth_headers):
-        response = client.get("/pedidos", params={"comprado": "true"}, headers=auth_headers)
+        response = client.get(
+            "/pedidos", params={"comprado": "true"}, headers=auth_headers
+        )
         assert response.status_code == 200
         dados = response.json()
         assert len(dados) >= 1
@@ -232,7 +274,9 @@ class TestFiltrosListagem:
 
     def test_filtro_combinado_sem_resultado(self, auth_headers):
         response = client.get(
-            "/pedidos", params={"setor": "Inexistente", "urgencia": "Alta"}, headers=auth_headers
+            "/pedidos",
+            params={"setor": "Inexistente", "urgencia": "Alta"},
+            headers=auth_headers,
         )
         assert response.status_code == 200
         assert response.json() == []
@@ -249,7 +293,10 @@ class TestResumoPedidos:
         assert response.status_code == 200
         dados = response.json()
         assert set(dados.keys()) == {
-            "total_pedidos", "valor_total_pendente", "por_urgencia", "por_setor",
+            "total_pedidos",
+            "valor_total_pendente",
+            "por_urgencia",
+            "por_setor",
         }
 
     def test_totais_consistentes_com_listagem(self, auth_headers):

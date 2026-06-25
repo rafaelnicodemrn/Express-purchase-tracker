@@ -39,6 +39,7 @@ app.add_middleware(
 
 # ── Modelos ───────────────────────────────────────────────────────────────────
 
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -69,6 +70,7 @@ class ResumoPedidos(BaseModel):
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
+
 def _criar_token(username: str) -> str:
     expire = datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     return jwt.encode({"sub": username, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
@@ -87,6 +89,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
 
 
 # ── Banco de dados ────────────────────────────────────────────────────────────
+
 
 def iniciar_db():
     with sqlite3.connect("compras.db") as conn:
@@ -107,8 +110,24 @@ def iniciar_db():
             dados_iniciais = [
                 ("Notebook Dell Latitude", 2, "Alta", 5500.0, "TI", 0, "2023-10-24"),
                 ("Cadeira Ergonomica", 5, "Normal", 1200.0, "RH", 0, "2023-10-24"),
-                ("Monitor 24 polegadas", 3, "Baixa", 900.0, "Marketing", 1, "2023-10-23"),
-                ("Licenca Software Adobe", 1, "Alta", 3500.0, "Design", 0, "2023-10-25"),
+                (
+                    "Monitor 24 polegadas",
+                    3,
+                    "Baixa",
+                    900.0,
+                    "Marketing",
+                    1,
+                    "2023-10-23",
+                ),
+                (
+                    "Licenca Software Adobe",
+                    1,
+                    "Alta",
+                    3500.0,
+                    "Design",
+                    0,
+                    "2023-10-25",
+                ),
             ]
             conn.executemany(
                 "INSERT INTO pedidos (item, quantidade, urgencia, preco_estimado, setor, comprado, data_criacao) VALUES (?,?,?,?,?,?,?)",
@@ -122,6 +141,7 @@ iniciar_db()
 
 # ── Background tasks ──────────────────────────────────────────────────────────
 
+
 async def processar_notificacao_diretoria(item: str, valor: float):
     logger.info(f"Processando notificacao de aprovacao para o item: {item}")
     await asyncio.sleep(5)
@@ -129,6 +149,7 @@ async def processar_notificacao_diretoria(item: str, valor: float):
 
 
 # ── Endpoints de autenticação ─────────────────────────────────────────────────
+
 
 @app.post("/auth/login", response_model=TokenResponse)
 def login(credenciais: LoginRequest):
@@ -141,6 +162,7 @@ def login(credenciais: LoginRequest):
 
 
 # ── Endpoints de pedidos (protegidos) ─────────────────────────────────────────
+
 
 @app.post("/pedidos", response_model=Pedido)
 async def criar_pedido(
