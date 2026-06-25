@@ -306,7 +306,7 @@
 
 <style>
   :root {
-    --bg-page: #d4e9f7;
+    --bg-page: #000000;
     --bg-card: #ffffff;
     --text-main: #1e293b;
     --text-muted: #64748b;
