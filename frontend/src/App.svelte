@@ -1,4 +1,4 @@
-<script>
+ <script>
   import { onMount } from 'svelte';
   import { fade, slide, scale } from 'svelte/transition';
   import { flip } from 'svelte/animate';
@@ -306,7 +306,7 @@
 
 <style>
   :root {
-    --bg-page: #f8fafc;
+    --bg-page: #d4e9f7;
     --bg-card: #ffffff;
     --text-main: #1e293b;
     --text-muted: #64748b;
