@@ -1,5 +1,6 @@
 # Express Purchase Tracker
 ![CI/CD](https://github.com/rafaelnicodemrn/Express-purchase-tracker/actions/workflows/ci-cd.yml/badge.svg)
+![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white) ![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white) ![SQLite](https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white)
 
 Aplicação interna de gestão de pedidos de compras, com backend em **FastAPI** (Python) e frontend em **Svelte 5** (Vite). Pedidos com valor estimado acima de R$ 5.000,00 disparam uma notificação assíncrona para a diretoria.
 
