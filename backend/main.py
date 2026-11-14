@@ -10,7 +10,8 @@ from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt
+from jwt import InvalidTokenError
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
 from typing import Dict, List, Literal, Optional
@@ -84,7 +85,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
         if username is None:
             raise HTTPException(status_code=401, detail="Token inválido")
         return username
-    except JWTError:
+    except InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token inválido ou expirado")
 
 
